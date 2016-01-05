@@ -5,6 +5,8 @@
  * ----------------------------------------------------------------------------
  */
 
+//Test comment, please ignore.
+
 #if DATATYPE==0
     #pragma message "Compiling using StorageT=half ComputeT=float"
     #define StorageT half
