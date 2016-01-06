@@ -6287,6 +6287,7 @@ public:
                                                             Response* pResponse;
 
                                                             if (0==type.compare("MemoryData"))     pLayer = new MemoryDataLayer(p);
+                                                            else if (0==type.compare("BBData"))     pLayer = new BBDataLayer(p);
                                                             else if (0==type.compare("DiskData")){
                                                                 uint8_t fpTypeid = readTypeID(p->member["file_data"]->returnString());
                                                                 if (fpTypeid==typeID(typeid(half)))        pLayer = new DiskDataLayer<half>(p);
