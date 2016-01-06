@@ -3578,7 +3578,7 @@ public:
         std::vector<size_t> v = randperm(dataCPU[0]->numofitems(), rng);
         for(int i =0; i <dataCPU.size();i++){
             // Only permute the non-bounding box inputs
-            if (std::find(bbInds.begin(), bbInds.end(), i) != bbInds.end()) {
+            if (std::find(bbInds.begin(), bbInds.end(), i) == bbInds.end()) {
                 dataCPU[i]->permute(v);
             }
             else {
@@ -3593,8 +3593,16 @@ public:
                 }
             }
         }
+	//Now shuffle the bb's too, not using the same shuffle as everything else.
+	std::vector<size_t> vbb = randperm(dataCPU[bbInds[0]]->numofitems(), rng);
+	for(int i =0; i <dataCPU.size();i++){
+	  // Only permute the bounding box inputs
+	  if (std::find(bbInds.begin(), bbInds.end(), i) != bbInds.end()) {
+	    dataCPU[i]->permute(vbb);
+	  }
+	}
     };
-
+  
     void forward(Phase phase_){
         if (counter + batch_size >= dataCPU[0]->numofitems() ){
             ++epoch;
@@ -3645,7 +3653,7 @@ public:
             checkCUDA(__LINE__, cudaMemcpy(out[i]->dataGPU, dataCPU[i]->CPUmem +  (size_t(counter) * size_t( dataCPU[i]->sizeofitem())), batch_size * dataCPU[i]->sizeofitem() * sizeofStorageT, cudaMemcpyHostToDevice) );     
 	  }
 	  else { //do the same, using the selected bb array
-	    checkCUDA(__LINE__, cudaMemcpy(out[i]->dataGPU, selected_BBs[next_bbind]->CPUmem +  (size_t(counter) * size_t( selected_BBs[next_bbind]->sizeofitem())), batch_size * selected_BBs[next_bbind]->sizeofitem() * sizeofStorageT, cudaMemcpyHostToDevice) );  
+	    checkCUDA(__LINE__, cudaMemcpy(out[i]->dataGPU, selected_BBs[next_bbind]->CPUmem + (size_t(counter) * size_t( selected_BBs[next_bbind]->sizeofitem())), batch_size * selected_BBs[next_bbind]->sizeofitem() * sizeofStorageT, cudaMemcpyHostToDevice) );  
 	    next_bbind++;
 	  }
 	}
