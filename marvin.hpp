@@ -3446,6 +3446,7 @@ public:
 
 class BBDataLayer : public DataLayer {
     std::vector<Tensor<StorageT>*> dataCPU;
+    std::vector<Tensor<StorageT>*> selected_BBs; //May want to make these ints instead
 public:
     std::vector<std::string> file_data;
     std::vector<int> bbInds;
@@ -3453,6 +3454,7 @@ public:
     std::vector<ComputeT> scale;
     std::vector<ComputeT> mean;
     int batch_size;
+    int num_bbs_per_datapoint;
 
     int numofitems(){
         return dataCPU[0]->dim[0];
@@ -3465,6 +3467,20 @@ public:
             dataCPU[i] = new Tensor<StorageT> (file_data[i],batch_size);
             dataCPU[i]->print(veci(0));
         }
+
+	//Define selected BB tensor
+	//First, define the dimensions for each BB input we have
+	for(int bbi=0; bbi<bbInds.size();bbi++) {
+	  std::vector<int> curr_bbdims;
+	  curr_bbdims.push_back(batch_size*num_bbs_per_datapoint);
+	  std::vector<int> curr_dims = dataCPU[bbInds[bbi]]->dim;
+	  for(int dim=1; dim<curr_dims.size();dim++) { //add all dims for the current bb other than number of elements(which needs to be batch_size)
+	    curr_bbdims.push_back(curr_dims[dim]);
+	  }
+	//Now allocate data structure of this size
+	  selected_BBs.push_back(new Tensor<StorageT> (curr_bbdims));
+	}
+
 
         if (file_mean.size()>0){
             for (int i =0;i<file_mean.size();i++){
@@ -3527,6 +3543,7 @@ public:
         SetValue(json, scale,       std::vector<ComputeT>(0))
         SetValue(json, mean,        std::vector<ComputeT>(0))
         SetValue(json, random,      true)
+	SetValue(json, num_bbs_per_datapoint, 64)
         init();
     };
     ~BBDataLayer(){
@@ -3586,9 +3603,52 @@ public:
                 counter = 0;
             }
         }
+	//For BB's, we need to:
+	//-select N BB's for each data point in the current batch
+	//-Select 25% of them to have positive labels(>0) and 75% background(non-object) labels(0)
+	//-Adjust these BB's to have their data point index pointers refer to the corresponding data point's index in the current batch.
+	//-Put this set of BB's into the GPU.
+	std::vector<int> current_batch_indices;
+	for(int i=0;i<batch_size;i++) {
+	  current_batch_indices.push_back(counter + i);
+	}
+	for(int i=0;i<current_batch_indices.size();i++) { //for each data point in the batch
+	  int curr_index = current_batch_indices[i];
+	  int num_included_bbs = 0;
+	  int num_included_positive = 0;
+	  int num_included_negative = 0;
+	  for(int bbnum=0; bbnum<dataCPU[bbInds[0]]->dim[0];bbnum++) {
+	    //iterate the corresponding values for this bb, assume all but the first are labels
+	    //Assume the first element of each item is the pointer index
+	    int curr_pointer = (int)CPUStorage2ComputeT(dataCPU[bbInds[0]]->CPUmem[bbnum*dataCPU[bbInds[0]]->sizeofitem()]);
+	    if(curr_pointer = curr_index && num_included_bbs != num_bbs_per_datapoint) { //this bb's pointer matches our datapoint!
+	      //TODO add selection of positive/negative points here
+	      
+	      //add this bb to the list for this batch.
+	      for(int bbind=0; bbind<bbInds.size();bbind++) {
+		//copy bytes to the forwarding array
+		int size_of_item = selected_BBs[bbind]->sizeofitem();
+		for(int ele=0;ele<size_of_item;ele++) {
+		  selected_BBs[bbind]->CPUmem[i*num_included_bbs*size_of_item + ele] = dataCPU[bbInds[bbind]]->CPUmem[bbnum*size_of_item + ele];
+		}
+		selected_BBs[bbind]->CPUmem[i*num_included_bbs*size_of_item] = CPUCompute2StorageT((float)curr_index); //set the pointer to be the index of it's datapoint in the batch.
+	      }
+	      num_included_bbs++;
+	    }
+	  }
+	}
+
+	//now put the selected bbs(and other things) in the GPU.	      
+	int next_bbind = 0;
         for(int i =0; i <dataCPU.size();i++){
+	  if(std::find(bbInds.begin(), bbInds.end(), i) == bbInds.end()) { //if not a bb index
             checkCUDA(__LINE__, cudaMemcpy(out[i]->dataGPU, dataCPU[i]->CPUmem +  (size_t(counter) * size_t( dataCPU[i]->sizeofitem())), batch_size * dataCPU[i]->sizeofitem() * sizeofStorageT, cudaMemcpyHostToDevice) );     
-        }
+	  }
+	  else { //do the same, using the selected bb array
+	    checkCUDA(__LINE__, cudaMemcpy(out[i]->dataGPU, selected_BBs[next_bbind]->CPUmem +  (size_t(counter) * size_t( selected_BBs[next_bbind]->sizeofitem())), batch_size * selected_BBs[next_bbind]->sizeofitem() * sizeofStorageT, cudaMemcpyHostToDevice) );  
+	    next_bbind++;
+	  }
+	}
         counter+=batch_size;
         if (counter >= dataCPU[0]->numofitems()) counter = 0;
     };
