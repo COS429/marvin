@@ -3566,6 +3566,9 @@ public:
         for (int i = 0;i < file_data.size(); i++){
             out[i]->need_diff = false;
             std::vector<int> data_dim = dataCPU[i]->dim;
+	    if(std::find(bbInds.begin()++,bbInds.end(),i)!=bbInds.end()) { //HACK! Reduce the size of bb labels on the GPU to avoid carrying the datapoint pointer through to computation.
+	      data_dim[1]--;
+	    }
             data_dim[0] = batch_size;
             out[i]->receptive_field.resize(data_dim.size()-2);  fill_n(out[i]->receptive_field.begin(), data_dim.size()-2,1);
             out[i]->receptive_gap.resize(data_dim.size()-2);    fill_n(out[i]->receptive_gap.begin(),   data_dim.size()-2,1);
