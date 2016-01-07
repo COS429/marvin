@@ -3475,7 +3475,9 @@ public:
 	  curr_bbdims.push_back(batch_size*num_bbs_per_datapoint);
 	  std::vector<int> curr_dims = dataCPU[bbInds[bbi]]->dim;
 	  for(int dim=1; dim<curr_dims.size();dim++) { //add all dims for the current bb other than number of elements(which needs to be batch_size)
-	    curr_bbdims.push_back(curr_dims[dim]);
+	    if(curr_dims[dim] > 1 && bbi >0) { //HACK! Want to remove the datapoint index from the bb labels.
+	      curr_bbdims.push_back(curr_dims[dim] - 1);
+	    }
 	  }
 	//Now allocate data structure of this size
 	  selected_BBs.push_back(new Tensor<StorageT> (curr_bbdims));
@@ -3637,7 +3639,12 @@ public:
 		//copy bytes to the forwarding array
 		int size_of_item = selected_BBs[bbind]->sizeofitem();
 		for(int ele=0;ele<size_of_item;ele++) {
-		  selected_BBs[bbind]->CPUmem[i*num_included_bbs*size_of_item + ele] = dataCPU[bbInds[bbind]]->CPUmem[bbnum*size_of_item + ele];
+		  if(bbind != 0) { //HACK
+		    selected_BBs[bbind]->CPUmem[i*num_included_bbs*size_of_item + ele] = dataCPU[bbInds[bbind]]->CPUmem[bbnum*size_of_item + ele + 1];
+		  }
+		  else {
+		    selected_BBs[bbind]->CPUmem[i*num_included_bbs*size_of_item + ele] = dataCPU[bbInds[bbind]]->CPUmem[bbnum*size_of_item + ele];
+		  }
 		}
 		selected_BBs[bbind]->CPUmem[i*num_included_bbs*size_of_item] = CPUCompute2StorageT((float)curr_index); //set the pointer to be the index of it's datapoint in the batch.
 	      }
