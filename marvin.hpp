@@ -3643,6 +3643,7 @@ public:
 	  int num_included_bbs = 0;
 	  int num_included_positive = 0;
 	  int num_included_negative = 0;
+	  //	  std::cout<<"now finding bbs for image "<<curr_index<<std::endl;
 
 	  for(int bbnum=0; bbnum<dataCPU[bbInds[0]]->dim[0];bbnum++) { //Iterate all bb's
 	    //iterate the corresponding values for this bb, assume all but the first are labels
@@ -3651,7 +3652,8 @@ public:
 	    int curr_pointer = (int)CPUStorage2ComputeT(dataCPU[bbInds[0]]->CPUmem[bbnum*dataCPU[bbInds[0]]->sizeofitem()]);
 	    if(curr_pointer == curr_index && num_included_bbs < num_bbs_per_datapoint) { //this bb's pointer matches our datapoint!
 	      //TODO add selection of positive/negative points here
-
+	      //      std::cout<<"found bb!"<<std::endl;
+	      
 	      int size_of_bb = dataCPU[bbInds[0]]->sizeofitem(); //this is 5
 	      //add this bb to the list for this batch.
 	      for(int ele=0;ele<size_of_bb;ele++) {
@@ -3671,10 +3673,10 @@ public:
 	//now put the selected bbs(and other things) in the GPU.	      
         for(int i =0; i <dataCPU.size();i++){
 	  if(bbInds[0] == i) { //add bbs
-	    checkCUDA(__LINE__, cudaMemcpy(out[i]->dataGPU, selected_BBs->CPUmem + (size_t(counter) * size_t( selected_BBs->sizeofitem())), batch_size * num_bbs_per_datapoint * selected_BBs->sizeofitem() * sizeofStorageT, cudaMemcpyHostToDevice) );  
+	    checkCUDA(__LINE__, cudaMemcpy(out[i]->dataGPU, selected_BBs->CPUmem, batch_size * num_bbs_per_datapoint * selected_BBs->sizeofitem() * sizeofStorageT, cudaMemcpyHostToDevice) );  
 	  }
 	  else if(bbInds[1] == i) { //add bb labels
-	    checkCUDA(__LINE__, cudaMemcpy(out[i]->dataGPU, selected_BB_labels->CPUmem + (size_t(counter) * size_t( selected_BB_labels->sizeofitem())), batch_size * num_bbs_per_datapoint * selected_BB_labels->sizeofitem() * sizeofStorageT, cudaMemcpyHostToDevice) );  
+	    checkCUDA(__LINE__, cudaMemcpy(out[i]->dataGPU, selected_BB_labels->CPUmem, batch_size * num_bbs_per_datapoint * selected_BB_labels->sizeofitem() * sizeofStorageT, cudaMemcpyHostToDevice) );  
 	  }
 	  else { //not a bb tensor
             checkCUDA(__LINE__, cudaMemcpy(out[i]->dataGPU, dataCPU[i]->CPUmem +  (size_t(counter) * size_t( dataCPU[i]->sizeofitem())), batch_size * dataCPU[i]->sizeofitem() * sizeofStorageT, cudaMemcpyHostToDevice) );     
