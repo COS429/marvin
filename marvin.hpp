@@ -3478,6 +3478,9 @@ public:
 	    if(curr_dims[dim] > 1 && bbi >0) { //HACK! Want to remove the datapoint index from the bb labels.
 	      curr_bbdims.push_back(curr_dims[dim] - 1);
 	    }
+	    else {
+	      curr_bbdims.push_back(curr_dims[dim]);
+	    }
 	  }
 	//Now allocate data structure of this size
 	  selected_BBs.push_back(new Tensor<StorageT> (curr_bbdims));
@@ -3634,18 +3637,22 @@ public:
 	    //iterate the corresponding values for this bb, assume all but the first are labels
 	    //Assume the first element of each item is the pointer index
 	    int curr_pointer = (int)CPUStorage2ComputeT(dataCPU[bbInds[0]]->CPUmem[bbnum*dataCPU[bbInds[0]]->sizeofitem()]);
-	    if(curr_pointer = curr_index && num_included_bbs != num_bbs_per_datapoint) { //this bb's pointer matches our datapoint!
+	    if(curr_pointer = curr_index && num_included_bbs < num_bbs_per_datapoint) { //this bb's pointer matches our datapoint!
 	      //TODO add selection of positive/negative points here
 	      
 	      //add this bb to the list for this batch.
 	      for(int bbind=0; bbind<bbInds.size();bbind++) {
 		//copy bytes to the forwarding array
-		int size_of_item = selected_BBs[bbind]->sizeofitem();
-		for(int ele=0;ele<size_of_item;ele++) {
-		  if(bbind != 0) { //HACK
-		    selected_BBs[bbind]->CPUmem[i*num_included_bbs*size_of_item + ele] = dataCPU[bbInds[bbind]]->CPUmem[bbnum*size_of_item + ele + 1];
-		  }
-		  else {
+		int size_of_item_bbinds = selected_BBs[bbind]->sizeofitem();
+		int size_of_item = dataCPU[bbInds[bbind]]->sizeofitem();
+		//		std::cout<<"dims are "<<selected_BBs[bbind]->dim[0]
+		std::cout<<"item size is "<<size_of_item<<std::endl;
+		if(bbind != 0) { //HACK
+		  selected_BBs[bbind]->CPUmem[i*num_included_bbs*size_of_item_bbinds] = dataCPU[bbInds[bbind]]->CPUmem[(bbnum*size_of_item)+1];
+		  std::cout<<"label value is "<<selected_BBs[bbind]->CPUmem[i*num_included_bbs*size_of_item_bbinds]<<std::endl;
+		}
+		else {
+		  for(int ele=0;ele<size_of_item;ele++) {
 		    selected_BBs[bbind]->CPUmem[i*num_included_bbs*size_of_item + ele] = dataCPU[bbInds[bbind]]->CPUmem[bbnum*size_of_item + ele];
 		  }
 		}
