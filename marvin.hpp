@@ -3446,7 +3446,8 @@ public:
 
 class BBDataLayer : public DataLayer {
     std::vector<Tensor<StorageT>*> dataCPU;
-    std::vector<Tensor<StorageT>*> selected_BBs; //May want to make these ints instead
+    Tensor<StorageT>* selected_BBs; //May want to make these ints instead
+    Tensor<StorageT>* selected_BB_labels; //same ordering as the bbs
 public:
     std::vector<std::string> file_data;
     std::vector<int> bbInds;
@@ -3470,21 +3471,27 @@ public:
 
 	//Define selected BB tensor
 	//First, define the dimensions for each BB input we have
-	for(int bbi=0; bbi<bbInds.size();bbi++) {
-	  std::vector<int> curr_bbdims;
-	  curr_bbdims.push_back(batch_size*num_bbs_per_datapoint);
-	  std::vector<int> curr_dims = dataCPU[bbInds[bbi]]->dim;
-	  for(int dim=1; dim<curr_dims.size();dim++) { //add all dims for the current bb other than number of elements(which needs to be batch_size)
-	    if(curr_dims[dim] > 1 && bbi >0) { //HACK! Want to remove the datapoint index from the bb labels.
-	      curr_bbdims.push_back(curr_dims[dim] - 1);
-	    }
-	    else {
-	      curr_bbdims.push_back(curr_dims[dim]);
-	    }
-	  }
-	//Now allocate data structure of this size
-	  selected_BBs.push_back(new Tensor<StorageT> (curr_bbdims));
+	//Should be two of them, one for bb's, one for labels.
+	if(bbInds.size()!=2) {
+	  std::cerr<<"Two Bounding Box inputs must be specified(boxes and labels)"<<std::endl;
+	    FatalError(__LINE__);
 	}
+
+	//bb tensor is N*Bx5x1x1	
+	std::vector<int> bbdims;
+	bbdims.push_back(batch_size*num_bbs_per_datapoint);
+	bbdims.push_back(5);
+	bbdims.push_back(1);
+	bbdims.push_back(1);
+	selected_BBs = new Tensor<StorageT> (bbdims);
+
+	//bb label tensor is N*Bx1x1x1
+	std::vector<int> bblabeldims;
+	bblabeldims.push_back(batch_size*num_bbs_per_datapoint);
+	bblabeldims.push_back(1);
+	bblabeldims.push_back(1);
+	bblabeldims.push_back(1);
+	selected_BB_labels = new Tensor<StorageT> (bblabeldims);
 
 
         if (file_mean.size()>0){
@@ -3542,7 +3549,7 @@ public:
         SetOrDie(json, name)
         SetValue(json, phase,       Training)
         SetOrDie(json, file_data    )
-        SetValue(json, bbInds,      {1}  )
+	  SetValue(json, bbInds,      {1}) //something's odd about this, won't take more values. Need to fix.
         SetValue(json, file_mean,   std::vector<std::string>(0))
         SetValue(json, batch_size,  64)
         SetValue(json, scale,       std::vector<ComputeT>(0))
@@ -3569,9 +3576,6 @@ public:
         for (int i = 0;i < file_data.size(); i++){
             out[i]->need_diff = false;
             std::vector<int> data_dim = dataCPU[i]->dim;
-	    if(bbInds[1]==i) { //HACK! Reduce the size of bb labels on the GPU to avoid carrying the datapoint pointer through to computation.
-	      data_dim[1]--;
-	    }
             data_dim[0] = batch_size;
             out[i]->receptive_field.resize(data_dim.size()-2);  fill_n(out[i]->receptive_field.begin(), data_dim.size()-2,1);
             out[i]->receptive_gap.resize(data_dim.size()-2);    fill_n(out[i]->receptive_gap.begin(),   data_dim.size()-2,1);
@@ -3586,10 +3590,10 @@ public:
         std::vector<size_t> v = randperm(dataCPU[0]->numofitems(), rng);
         for(int i =0; i <dataCPU.size();i++){
             // Only permute the non-bounding box inputs
-            if (std::find(bbInds.begin(), bbInds.end(), i) == bbInds.end()) {
+            if (bbInds[0] != i && bbInds[1] != i) {
                 dataCPU[i]->permute(v);
             }
-            else {
+            else if(bbInds[0] == i) { //If these are the bounding boxes, adjust their index pointers to match the new shuffled datapoint order
                 std::vector<size_t> v_inv(v.size());
                 for(int q = 0; q < v.size(); q++) {
                     v_inv[v[q]] = q;
@@ -3605,7 +3609,7 @@ public:
 	std::vector<size_t> vbb = randperm(dataCPU[bbInds[0]]->numofitems(), rng);
 	for(int i =0; i <dataCPU.size();i++){
 	  // Only permute the bounding box inputs
-	  if (std::find(bbInds.begin(), bbInds.end(), i) != bbInds.end()) {
+	  if (bbInds[0] == i || bbInds[1] == i) {
 	    dataCPU[i]->permute(vbb);
 	  }
 	}
@@ -3628,52 +3632,46 @@ public:
 	for(int i=0;i<batch_size;i++) {
 	  current_batch_indices.push_back(counter + i);
 	}
+
 	for(int i=0;i<current_batch_indices.size();i++) { //for each data point in the batch
 	  int curr_index = current_batch_indices[i];
 	  int num_included_bbs = 0;
 	  int num_included_positive = 0;
 	  int num_included_negative = 0;
-	  for(int bbnum=0; bbnum<dataCPU[bbInds[0]]->dim[0];bbnum++) {
+
+	  for(int bbnum=0; bbnum<dataCPU[bbInds[0]]->dim[0];bbnum++) { //Iterate all bb's
 	    //iterate the corresponding values for this bb, assume all but the first are labels
-	    //Assume the first element of each item is the pointer index
+
+	    //The first element of each item is the pointer index
 	    int curr_pointer = (int)CPUStorage2ComputeT(dataCPU[bbInds[0]]->CPUmem[bbnum*dataCPU[bbInds[0]]->sizeofitem()]);
 	    if(curr_pointer = curr_index && num_included_bbs < num_bbs_per_datapoint) { //this bb's pointer matches our datapoint!
 	      //TODO add selection of positive/negative points here
-	      
+
+	      int size_of_bb = dataCPU[bbInds[0]]->sizeofitem(); //this is 5
 	      //add this bb to the list for this batch.
-	      for(int bbind=0; bbind<bbInds.size();bbind++) {
-		//copy bytes to the forwarding array
-		int size_of_item_bbinds = selected_BBs[bbind]->sizeofitem();
-		int size_of_item = dataCPU[bbInds[bbind]]->sizeofitem();
-		//		std::cout<<"dims are "<<selected_BBs[bbind]->dim[0]
-		std::cout<<"item size is "<<size_of_item<<std::endl;
-		if(bbind != 0) { //HACK
-		  selected_BBs[bbind]->CPUmem[i*num_included_bbs*size_of_item_bbinds] = dataCPU[bbInds[bbind]]->CPUmem[(bbnum*size_of_item)+1];
-		  std::cout<<"label value is "<<selected_BBs[bbind]->CPUmem[i*num_included_bbs*size_of_item_bbinds]<<std::endl;
-		}
-		else {
-		  for(int ele=0;ele<size_of_item;ele++) {
-		    selected_BBs[bbind]->CPUmem[i*num_included_bbs*size_of_item + ele] = dataCPU[bbInds[bbind]]->CPUmem[bbnum*size_of_item + ele];
-		  }
-		}
-		if(bbind == 0) { //HACK!
-		  selected_BBs[bbind]->CPUmem[i*num_included_bbs*size_of_item] = CPUCompute2StorageT((float)curr_index); //set the pointer to be the index of it's datapoint in the batch.
-		}
+	      for(int ele=0;ele<size_of_bb;ele++) {
+		selected_BBs->CPUmem[i*num_bbs_per_datapoint*size_of_bb + num_included_bbs*size_of_bb + ele] = dataCPU[bbInds[0]]->CPUmem[bbnum*size_of_bb + ele];
 	      }
+	      selected_BBs->CPUmem[i*num_bbs_per_datapoint*size_of_bb + num_included_bbs*size_of_bb] = CPUCompute2StorageT((float)curr_index); //set the pointer to be the index of it's datapoint in the batch.
+
+	      // add label too. Only one value per bb.
+	      selected_BB_labels->CPUmem[i*num_bbs_per_datapoint + num_included_bbs] = dataCPU[bbInds[1]]->CPUmem[bbnum];
+
 	      num_included_bbs++;
 	    }
 	  }
 	}
 
 	//now put the selected bbs(and other things) in the GPU.	      
-	int next_bbind = 0;
         for(int i =0; i <dataCPU.size();i++){
-	  if(std::find(bbInds.begin(), bbInds.end(), i) == bbInds.end()) { //if not a bb index
-            checkCUDA(__LINE__, cudaMemcpy(out[i]->dataGPU, dataCPU[i]->CPUmem +  (size_t(counter) * size_t( dataCPU[i]->sizeofitem())), batch_size * dataCPU[i]->sizeofitem() * sizeofStorageT, cudaMemcpyHostToDevice) );     
+	  if(bbInds[0] == i) { //add bbs
+	    checkCUDA(__LINE__, cudaMemcpy(out[i]->dataGPU, selected_BBs->CPUmem + (size_t(counter) * size_t( selected_BBs->sizeofitem())), batch_size * selected_BBs->sizeofitem() * sizeofStorageT, cudaMemcpyHostToDevice) );  
 	  }
-	  else { //do the same, using the selected bb array
-	    checkCUDA(__LINE__, cudaMemcpy(out[i]->dataGPU, selected_BBs[next_bbind]->CPUmem + (size_t(counter) * size_t( selected_BBs[next_bbind]->sizeofitem())), batch_size * selected_BBs[next_bbind]->sizeofitem() * sizeofStorageT, cudaMemcpyHostToDevice) );  
-	    next_bbind++;
+	  else if(bbInds[1] == i) { //add bb labels
+	    checkCUDA(__LINE__, cudaMemcpy(out[i]->dataGPU, selected_BB_labels->CPUmem + (size_t(counter) * size_t( selected_BB_labels->sizeofitem())), batch_size * selected_BB_labels->sizeofitem() * sizeofStorageT, cudaMemcpyHostToDevice) );  
+	  }
+	  else { //not a bb tensor
+            checkCUDA(__LINE__, cudaMemcpy(out[i]->dataGPU, dataCPU[i]->CPUmem +  (size_t(counter) * size_t( dataCPU[i]->sizeofitem())), batch_size * dataCPU[i]->sizeofitem() * sizeofStorageT, cudaMemcpyHostToDevice) );     
 	  }
 	}
         counter+=batch_size;
