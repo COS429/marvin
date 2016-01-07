@@ -3576,7 +3576,12 @@ public:
         for (int i = 0;i < file_data.size(); i++){
             out[i]->need_diff = false;
             std::vector<int> data_dim = dataCPU[i]->dim;
+	    if(bbInds[0]==i || bbInds[1]==i) { //number of bbs in a batch differs from other outputs
+	      data_dim[0] = batch_size * num_bbs_per_datapoint;
+	    }
+	    else {
             data_dim[0] = batch_size;
+	    }
             out[i]->receptive_field.resize(data_dim.size()-2);  fill_n(out[i]->receptive_field.begin(), data_dim.size()-2,1);
             out[i]->receptive_gap.resize(data_dim.size()-2);    fill_n(out[i]->receptive_gap.begin(),   data_dim.size()-2,1);
             out[i]->receptive_offset.resize(data_dim.size()-2); fill_n(out[i]->receptive_offset.begin(),data_dim.size()-2,0);
@@ -3644,7 +3649,7 @@ public:
 
 	    //The first element of each item is the pointer index
 	    int curr_pointer = (int)CPUStorage2ComputeT(dataCPU[bbInds[0]]->CPUmem[bbnum*dataCPU[bbInds[0]]->sizeofitem()]);
-	    if(curr_pointer = curr_index && num_included_bbs < num_bbs_per_datapoint) { //this bb's pointer matches our datapoint!
+	    if(curr_pointer == curr_index && num_included_bbs < num_bbs_per_datapoint) { //this bb's pointer matches our datapoint!
 	      //TODO add selection of positive/negative points here
 
 	      int size_of_bb = dataCPU[bbInds[0]]->sizeofitem(); //this is 5
@@ -3656,6 +3661,7 @@ public:
 
 	      // add label too. Only one value per bb.
 	      selected_BB_labels->CPUmem[i*num_bbs_per_datapoint + num_included_bbs] = dataCPU[bbInds[1]]->CPUmem[bbnum];
+	      //	      std::cout<<"label is "<<dataCPU[bbInds[1]]->CPUmem[bbnum]<<std::endl;
 
 	      num_included_bbs++;
 	    }
@@ -3665,10 +3671,10 @@ public:
 	//now put the selected bbs(and other things) in the GPU.	      
         for(int i =0; i <dataCPU.size();i++){
 	  if(bbInds[0] == i) { //add bbs
-	    checkCUDA(__LINE__, cudaMemcpy(out[i]->dataGPU, selected_BBs->CPUmem + (size_t(counter) * size_t( selected_BBs->sizeofitem())), batch_size * selected_BBs->sizeofitem() * sizeofStorageT, cudaMemcpyHostToDevice) );  
+	    checkCUDA(__LINE__, cudaMemcpy(out[i]->dataGPU, selected_BBs->CPUmem + (size_t(counter) * size_t( selected_BBs->sizeofitem())), batch_size * num_bbs_per_datapoint * selected_BBs->sizeofitem() * sizeofStorageT, cudaMemcpyHostToDevice) );  
 	  }
 	  else if(bbInds[1] == i) { //add bb labels
-	    checkCUDA(__LINE__, cudaMemcpy(out[i]->dataGPU, selected_BB_labels->CPUmem + (size_t(counter) * size_t( selected_BB_labels->sizeofitem())), batch_size * selected_BB_labels->sizeofitem() * sizeofStorageT, cudaMemcpyHostToDevice) );  
+	    checkCUDA(__LINE__, cudaMemcpy(out[i]->dataGPU, selected_BB_labels->CPUmem + (size_t(counter) * size_t( selected_BB_labels->sizeofitem())), batch_size * num_bbs_per_datapoint * selected_BB_labels->sizeofitem() * sizeofStorageT, cudaMemcpyHostToDevice) );  
 	  }
 	  else { //not a bb tensor
             checkCUDA(__LINE__, cudaMemcpy(out[i]->dataGPU, dataCPU[i]->CPUmem +  (size_t(counter) * size_t( dataCPU[i]->sizeofitem())), batch_size * dataCPU[i]->sizeofitem() * sizeofStorageT, cudaMemcpyHostToDevice) );     
