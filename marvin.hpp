@@ -3649,7 +3649,9 @@ public:
 		    selected_BBs[bbind]->CPUmem[i*num_included_bbs*size_of_item + ele] = dataCPU[bbInds[bbind]]->CPUmem[bbnum*size_of_item + ele];
 		  }
 		}
-		selected_BBs[bbind]->CPUmem[i*num_included_bbs*size_of_item] = CPUCompute2StorageT((float)curr_index); //set the pointer to be the index of it's datapoint in the batch.
+		if(bbind == 0) { //HACK!
+		  selected_BBs[bbind]->CPUmem[i*num_included_bbs*size_of_item] = CPUCompute2StorageT((float)curr_index); //set the pointer to be the index of it's datapoint in the batch.
+		}
 	      }
 	      num_included_bbs++;
 	    }
