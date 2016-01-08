@@ -3628,11 +3628,7 @@ public:
                 counter = 0;
             }
         }
-	//For BB's, we need to:
-	//-select N BB's for each data point in the current batch
-	//-Select 25% of them to have positive labels(>0) and 75% background(non-object) labels(0)
-	//-Adjust these BB's to have their data point index pointers refer to the corresponding data point's index in the current batch.
-	//-Put this set of BB's into the GPU.
+
 	std::vector<int> current_batch_indices;
 	for(int i=0;i<batch_size;i++) {
 	  current_batch_indices.push_back(counter + i);
@@ -3641,9 +3637,6 @@ public:
 	for(int i=0;i<current_batch_indices.size();i++) { //for each data point in the batch
 	  int curr_index = current_batch_indices[i];
 	  int num_included_bbs = 0;
-	  int num_included_positive = 0;
-	  int num_included_negative = 0;
-	  //	  std::cout<<"now finding bbs for image "<<curr_index<<std::endl;
 
 	  for(int bbnum=0; bbnum<dataCPU[bbInds[0]]->dim[0];bbnum++) { //Iterate all bb's
 	    //iterate the corresponding values for this bb, assume all but the first are labels
@@ -3651,8 +3644,6 @@ public:
 	    //The first element of each item is the pointer index
 	    int curr_pointer = (int)CPUStorage2ComputeT(dataCPU[bbInds[0]]->CPUmem[bbnum*dataCPU[bbInds[0]]->sizeofitem()]);
 	    if(curr_pointer == curr_index && num_included_bbs < num_bbs_per_datapoint) { //this bb's pointer matches our datapoint!
-	      //TODO add selection of positive/negative points here
-	      //      std::cout<<"found bb!"<<std::endl;
 	      
 	      int size_of_bb = dataCPU[bbInds[0]]->sizeofitem(); //this is 5
 	      //add this bb to the list for this batch.
@@ -3663,7 +3654,6 @@ public:
 
 	      // add label too. Only one value per bb.
 	      selected_BB_labels->CPUmem[i*num_bbs_per_datapoint + num_included_bbs] = dataCPU[bbInds[1]]->CPUmem[bbnum];
-	      //	      std::cout<<"label is "<<dataCPU[bbInds[1]]->CPUmem[bbnum]<<std::endl;
 
 	      num_included_bbs++;
 	    }
