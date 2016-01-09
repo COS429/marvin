@@ -1,3 +1,4 @@
+
 /*
  * ----------------------------------------------------------------------------
  * Marvin: A Minimalist GPU-only N-Dimensional ConvNets Framework
@@ -3650,7 +3651,7 @@ public:
 	      for(int ele=0;ele<size_of_bb;ele++) {
 		selected_BBs->CPUmem[i*num_bbs_per_datapoint*size_of_bb + num_included_bbs*size_of_bb + ele] = dataCPU[bbInds[0]]->CPUmem[bbnum*size_of_bb + ele];
 	      }
-	      selected_BBs->CPUmem[i*num_bbs_per_datapoint*size_of_bb + num_included_bbs*size_of_bb] = CPUCompute2StorageT((float)curr_index); //set the pointer to be the index of it's datapoint in the batch.
+	      selected_BBs->CPUmem[i*num_bbs_per_datapoint*size_of_bb + num_included_bbs*size_of_bb] = CPUCompute2StorageT((float)i); //set the pointer to be the index of it's datapoint in the batch.
 
 	      // add label too. Only one value per bb.
 	      selected_BB_labels->CPUmem[i*num_bbs_per_datapoint + num_included_bbs] = dataCPU[bbInds[1]]->CPUmem[bbnum];
