@@ -1555,6 +1555,7 @@ __global__ void CoeffElementWiseSumAccumulate(size_t CUDA_NUM_LOOPS, size_t N, c
         int  n = (index / pooled_width / pooled_height / channels);
 
         int roi_5n = n*5;
+	//	printf("input roi miny is %f, maxy is %f, minx is %f, maxx is %f\n", GPUStorage2ComputeT(in_rois[roi_5n+1]), GPUStorage2ComputeT(in_rois[roi_5n+2]), GPUStorage2ComputeT(in_rois[roi_5n+3]), GPUStorage2ComputeT(in_rois[roi_5n+4]));
         int roi_batch_ind = GPUStorage2ComputeT(in_rois[roi_5n+0]);
         int roi_start_h = round(GPUStorage2ComputeT(in_rois[roi_5n+1]) * spatial_scale);
         int roi_end_h = round(GPUStorage2ComputeT(in_rois[roi_5n+2]) * spatial_scale);
@@ -1564,6 +1565,7 @@ __global__ void CoeffElementWiseSumAccumulate(size_t CUDA_NUM_LOOPS, size_t N, c
         // Force malformed ROIs to be 1x1
         int roi_width = max(roi_end_w - roi_start_w + 1, 1);
         int roi_height = max(roi_end_h - roi_start_h + 1, 1);
+	//	printf("roi index is %d, roi miny is %d, roi maxy is %d, roi minx is %d, and roi maxx is %d. total xdim length is %d and ydim length is %d\n",roi_batch_ind, roi_start_h, roi_end_h, roi_start_w, roi_end_w, roi_width, roi_height);
         ComputeT bin_size_h = static_cast<ComputeT>(roi_height) / static_cast<ComputeT>(pooled_height);
         ComputeT bin_size_w = static_cast<ComputeT>(roi_width) / static_cast<ComputeT>(pooled_width);
 
@@ -1584,7 +1586,8 @@ __global__ void CoeffElementWiseSumAccumulate(size_t CUDA_NUM_LOOPS, size_t N, c
         // If nothing is pooled, argmax = -1 causes nothing to be backprop'd
         size_t maxidx = SIZE_MAX;
 
-        size_t in_offset = (roi_batch_ind * channels + c) * height * width;
+	size_t in_offset = (roi_batch_ind * channels + c) * height * width;
+	//	printf("bb index is %d channels is %d c is %d height is %d width is %d and in_offset is %u, sum is %d, size t is %d\n", roi_batch_ind, channels, c, height, width, in_offset, (roi_batch_ind * channels + c) * height * width, sizeof(size_t));
 
         for (int h = hstart; h < hend; ++h) {
             for (int w = wstart; w < wend; ++w) {
@@ -3457,9 +3460,10 @@ public:
     std::vector<ComputeT> mean;
     int batch_size;
     int num_bbs_per_datapoint;
+    float fraction_positive;
 
     int numofitems(){
-        return dataCPU[0]->dim[0];
+        return dataCPU[0]->dim[0] * num_bbs_per_datapoint;
     };
     void init(){
         train_me = false;
@@ -3539,7 +3543,7 @@ public:
             }
         }
 
-        if (phase!=Testing) shuffle();
+	if (phase!=Testing) shuffle();
     }
 
     BBDataLayer(std::string name_, Phase phase_, std::vector<std::string> file_data_, int batch_size_): DataLayer(name_), batch_size(batch_size_), file_data(file_data_){
@@ -3557,6 +3561,7 @@ public:
         SetValue(json, mean,        std::vector<ComputeT>(0))
         SetValue(json, random,      true)
 	SetValue(json, num_bbs_per_datapoint, 64)
+	SetValue(json, fraction_positive, 0.5)
         init();
     };
     ~BBDataLayer(){
@@ -3644,7 +3649,18 @@ public:
 
 	    //The first element of each item is the pointer index
 	    int curr_pointer = (int)CPUStorage2ComputeT(dataCPU[bbInds[0]]->CPUmem[bbnum*dataCPU[bbInds[0]]->sizeofitem()]);
+	    int curr_label = (int)CPUStorage2ComputeT(dataCPU[bbInds[1]]->CPUmem[bbnum*dataCPU[bbInds[1]]->sizeofitem()]);
 	    if(curr_pointer == curr_index && num_included_bbs < num_bbs_per_datapoint) { //this bb's pointer matches our datapoint!
+	      //decide if we have enough positive/negative labels for the current image
+	      /*    if(curr_label > 0 && num_included_pos < total_pos) {
+		num_included_pos++;
+	      }
+	      else if(curr_label == 0 && num_included_neg < total_neg) {
+		num_included_neg++;
+	      }
+	      else {
+		continue;
+		}*/
 	      
 	      int size_of_bb = dataCPU[bbInds[0]]->sizeofitem(); //this is 5
 	      //add this bb to the list for this batch.
@@ -3674,7 +3690,7 @@ public:
 	  }
 	}
         counter+=batch_size;
-        if (counter >= dataCPU[0]->numofitems()) counter = 0;
+	if (counter >= dataCPU[0]->numofitems()) counter = 0;
     };
 };
 
